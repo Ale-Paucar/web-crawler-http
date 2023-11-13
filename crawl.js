@@ -1,26 +1,48 @@
 const {JSDOM} = require('jsdom');
 
-const crawlPage = async (currentURL) => {
-    console.log(`actively crawling: ${currentURL}`)
+const crawlPage = async (baseURL, currentURL, pages) => {
+    const baseURLObj = new URL(baseURL);
+    const currentURLObj = new URL(currentURL);
+        if(baseURLObj.host !== currentURLObj.hostname){
+        return pages;
+    }
+
+    const normalizeCurrentURL = normalizeURL(currentURL);
+    if(pages[normalizeCurrentURL] > 0){
+        pages[normalizeCurrentURL]++;
+        return pages;
+    }
+
+    pages[normalizeCurrentURL] = 1;
+
+    
+    console.log(`actively crawling: ${currentURL}`);
+
     try {
         const response = await fetch(currentURL);
         if(response.status > 399){
             console.log(`error in fetch with status code: ${response.status} on page: ${currentURL}`)
-            return
+            return pages
         }
 
         const contentType = response.headers.get("content-type");
         if(!contentType.includes("text/html")){
             console.log(`non html response, content type: ${contentType}, on page: ${currentURL}`);
-            return;
+            return pages;
 
         }
 
-        console.log( await response.text());
+        const htmlBody = await response.text();
+
+        const nextURLs = getURLsfromHTML(htmlBody, baseURL);
+
+        for (const nextURL of nextURLs) {
+            pages = await crawlPage(baseURL,nextURL, pages)
+        }
     } catch (err) {
         console.log(`error in fetch: ${err.message}, on page: ${currentURL}`)
     }
-
+    return pages;
 }
 
 
@@ -32,17 +54,17 @@ const getURLsfromHTML = (htmlBody, baseUrl) => {
         if(linkElement.href.slice(0,1) === "/"){
             // * relative
             try {
-                const  urlObj = new URL(`${baseUrl}${linkElement.href}`);
+                const  urlObj = new URL(linkElement.href, baseUrl);
                 urls.push(urlObj.href);
                 
             } catch (err) {
                 console.log(`Error with relative url: ${err.message}`)
             }
         }else{
-            // * relative
+            // * absolute
             try {
                 const  urlObj = new URL(linkElement.href);
-                urls.push(linkElement.href);
+                urls.push(urlObj.href);
             } catch (err) {
                 console.log(`Error with relative url: ${err.message}`)
             }
@@ -59,6 +81,10 @@ const normalizeURL=(urlString)=>{
     return hostPath.length > 0 && hostPath.slice(-1) === '/' ?
         hostPath.slice(0,-1)
         : hostPath;
+    // if(hostPath.length > 0 && hostPath.slice(-1) === '/'){
+    //     return hostPath.slice(0,-1)
+    // }
+    // return hostPath
 }
 
 module.exports = {
